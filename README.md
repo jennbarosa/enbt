@@ -1,6 +1,6 @@
 # enbt
 
-A command-line tool for generating Minecraft `servers.dat` files from structured data formats (CSV, JSON, TOML). Simplify managing or adding servers
+A bidirectional command-line tool for converting between Minecraft `servers.dat` files and structured data formats (CSV, JSON, TOML). Simplify managing, backing up, and sharing your Minecraft server lists.
 
 ## Build
 Clone the repo then run the following
@@ -10,45 +10,65 @@ cmake ..
 make
 ```
 
+## Testing
+Run all tests:
+```sh
+cd build
+ctest
+```
+
 
 ## Usage
 ```
-Usage: ./enbt -i <ip_list_input> [options]
+Usage: ./enbt -i <input_file> [options]
 Options
-	-i <input_file>			Input file with list of ips
-	-t <csv|toml|json>		Specifies the type of input file
-	-o <output_path>		Specifies the output. Default is 'servers.dat'
+	-i <input_file>			Input file
+	-t <csv|toml|json>		Specifies the type of input/output file
+	-o <output_path>		Specifies the output path
+	-r, --reverse			Reverse mode: convert servers.dat to CSV/JSON/TOML
 ```
 
+## Forward Conversion (CSV/JSON/TOML → servers.dat)
+
 ### Examples
-Generate a servers.dat file from a list of ips in csv format
-```
+Generate a servers.dat file from a CSV file
+```bash
 enbt -i servers_list.csv
 ```
 Generate with custom output location
-```
+```bash
 enbt -o "some_path/.minecraft/servers.dat" -i servers.toml
-```
-```
 enbt -o "custom_name.dat" -i ips.json
 ```
-If the file doesn't have an extension, you can provide the `-t` option.
-Several formats are supported!
-```
+If the file doesn't have an extension, you can provide the `-t` option
+```bash
 enbt -i servers -t toml
-```
-```
 enbt -i servers -t json
-``` 
-```
 enbt -i servers -t csv
 ```
-Generate servers.dat with piped input
+
+## Reverse Conversion (servers.dat → CSV/JSON/TOML)
+
+Extract your Minecraft server list to easy-to-edit formats for backup, sharing, or migration.
+
+### Examples
+Convert servers.dat to CSV
+```bash
+enbt -r -i servers.dat -t csv -o servers.csv
+enbt -r -i ~/.minecraft/servers.dat -t csv -o servers.csv
 ```
-echo "{\"servers\": [{\"ip\": \"1.0.0.1\", \"name\": \"Piped server\", \"icon\": \"/9j/4AAQS\", \"accept_textures\": true}]}" | enbt -t json
+Convert to JSON
+```bash
+enbt -r -i servers.dat -t json -o servers.json
 ```
+Convert to TOML
+```bash
+enbt -r -i servers.dat -t toml -o servers.toml
 ```
-echo "Server1,/9j/4AAQSkZJRgABAQIAJQAl,153.74.117.133,1" | enbt -t csv
+Output to stdout (useful for piping)
+```bash
+enbt -r -i servers.dat -t csv -o -
+enbt -r -i servers.dat -t json -o - | jq .
 ```
 
 ## Input Format
