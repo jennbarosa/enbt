@@ -5,6 +5,7 @@
 #include <sstream>
 #include <filesystem>
 #include "parse.hpp"
+#include "serialize.hpp"
 #include "NBTWriter.h"
 #include <vector>
 
@@ -18,11 +19,15 @@ namespace fs = std::filesystem;
 #endif
 
 void usage(const std::string_view program) {
-	std::cout << "Usage: " << program << " -i <ip_list_input> [options]\n";
+	std::cout << "Usage: " << program << " -i <input_file> [options]\n";
 	std::cout << "Options\n";
-	std::cout << "\t-i <input_file>\t\t\tInput file with list of ips\n";
-	std::cout << "\t-t <csv|toml|json>\t\tSpecifies the type of input file\n";
-	std::cout << "\t-o <output_path>\t\tSpecifies the output. Default is 'servers.dat'\n";
+	std::cout << "\t-i <input_file>\t\t\tInput file\n";
+	std::cout << "\t-t <csv|toml|json>\t\tSpecifies the type of input/output file\n";
+	std::cout << "\t-o <output_path>\t\tSpecifies the output path\n";
+	std::cout << "\t-r, --reverse\t\t\tReverse mode: convert servers.dat to CSV/JSON/TOML\n";
+	std::cout << "\nExamples:\n";
+	std::cout << "  Forward:  " << program << " -i servers.csv -o servers.dat\n";
+	std::cout << "  Reverse:  " << program << " -r -i servers.dat -t csv -o servers.csv\n";
 }
 
 void parse_arg(const std::string_view cmd, 
@@ -93,26 +98,70 @@ void ips_to_dat(std::istream* ip_stream, const std::string_view output_path, con
 	writer.close();
 }
 
+void dat_to_format(const std::string_view input_path,
+				   const std::string_view output_path,
+				   const std::string_view format) {
+
+	const std::vector<nbtserver> servers = parse_servers_dat(std::string(input_path));
+
+	if (servers.empty()) {
+		std::cout << "No servers found in " << input_path << "\n";
+		exit(1);
+	}
+
+	const std::string output_content = [&]() {
+		if (format == "csv")
+			return serialize_servers_csv(servers);
+		else if (format == "toml")
+			return serialize_servers_toml(servers);
+		else if (format == "json")
+			return serialize_servers_json(servers);
+		return std::string{};
+	}();
+
+	if (output_content.empty()) {
+		std::cout << "Failed to serialize servers\n";
+		exit(1);
+	}
+
+	// Write to file or stdout
+	if (output_path == "-") {
+		std::cout << output_content;
+	} else {
+		std::string output_path_str{output_path};
+		std::ofstream out{output_path_str};
+		if (!out.is_open()) {
+			std::cout << "Unable to open output file for writing (" << output_path << ")\n";
+			exit(1);
+		}
+		out << output_content;
+		out.close();
+	}
+}
+
 int main(int argc, char** argv) {
 	const std::string_view program = argv[0];
 	argv++;
 	argc--;
 
 	std::string input_path{};
-	std::string output_path = "servers.dat";	
+	std::string output_path = "servers.dat";
 	std::string input_type = "csv";
 	bool explicit_extension = false;
+	bool reverse_mode = false;
 
 	while (argc > 0) {
 		const std::string_view cmd = argv[0];
 		if (cmd == "-i") {
-			parse_arg(cmd, input_path, "", &argc, &argv, true);	
+			parse_arg(cmd, input_path, "", &argc, &argv, true);
 		} else if (cmd == "-o") {
 			parse_arg(cmd, output_path, "servers.dat", &argc, &argv, true);
 		} else if (cmd == "-t") {
 			parse_arg(cmd, input_type, "csv", &argc, &argv, true);
 			explicit_extension = true;
-		} else {		
+		} else if (cmd == "-r" || cmd == "--reverse") {
+			reverse_mode = true;
+		} else {
 			std::cout << "unknown option '" << cmd << "'\n";
 			usage(program);
 			exit(1);
@@ -121,52 +170,63 @@ int main(int argc, char** argv) {
 		argc--;
 	}
 
-	std::ifstream ip_file_stream;
-	std::istream* ip_stream;
-	bool cin_piped = !isatty(fileno(stdin));
+	// Validate input
 	if (input_path.empty()) {
-		if (!cin_piped) {
-			std::cout << "No input data provided\n";
+		std::cout << "No input file provided (-i required)\n";
+		usage(program);
+		exit(1);
+	}
+
+	if (!fs::exists(input_path)) {
+		std::cout << "Can't load '" << input_path << "': file doesn't exist\n";
+		exit(1);
+	}
+
+	// Handle reverse mode vs forward mode
+	if (reverse_mode) {
+		// servers.dat -> CSV/JSON/TOML
+		if (!explicit_extension) {
+			std::cout << "Reverse mode requires explicit output format (-t csv|json|toml)\n";
 			exit(1);
 		}
-		// input is piped. -i is ignored
-		ip_stream = &std::cin;
+
+		if (input_type != "csv" && input_type != "toml" && input_type != "json") {
+			std::cout << "Invalid value for -t '" << input_type << "'\n";
+			exit(1);
+		}
+
+		dat_to_format(input_path, output_path, input_type);
 	} else {
+		// CSV/JSON/TOML -> servers.dat (existing code)
+		std::ifstream ip_file_stream;
+		std::istream* ip_stream;
+		bool cin_piped = !isatty(fileno(stdin));
+
 		ip_file_stream.open(input_path.data());
 		if (!ip_file_stream.is_open()) {
 			std::cout << "Unable to open input file for reading (" << input_path << ")\n";
 			exit(1);
 		}
 		ip_stream = &ip_file_stream;
-	}
 
-	if (!fs::exists(input_path) && !cin_piped) {
-		std::cout << "Can't load '" << input_path << "': file doesn't exist\n";
-		exit(1);
-	}
+		if (!explicit_extension) {
+			auto ext = fs::path(input_path).extension().string();
+			if (ext.empty()) {
+				std::cout << "The input file provided does not have an extension. "
+						  << "Provide an explicit input type with the -t option\n";
+				exit(1);
+			}
+			input_type = ext.erase(0, 1);
+		}
 
-	if (!explicit_extension) {
-		if (cin_piped) {
-			std::cout << "You're piping data to enbt, but I have no idea what format it is. You need to provide the '-t' option\n";
+		if (input_type != "csv" && input_type != "toml" && input_type != "json") {
+			std::cout << "Invalid value for -t '" << input_type << "'\n";
 			exit(1);
 		}
 
-		// work how its expected to unless overriden with -t
-		auto ext = fs::path(input_path).extension().string();
-		if (ext.empty()) {
-			std::cout << "The input file provided does not have an extension. Provide an explicit input type with the -t option\n";
-			exit(1);
-		}
-		input_type = ext.erase(0, 1); //remove '.'
+		ips_to_dat(ip_stream, output_path, input_type);
 	}
 
-	if (input_type != "csv" && input_type != "toml" && input_type != "json") {
-		std::cout << "Invalid value for -t '" << input_type << "'\n";
-		exit(1);
-	}
-	
-	ips_to_dat(ip_stream, output_path, input_type);
-	
 	return 0;
 }
 

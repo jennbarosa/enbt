@@ -1,9 +1,11 @@
 #include "parse.hpp"
 #include "toml.hpp"
 #include "nlohmann/json.hpp"
+#include "NBTReader.h"
 #include <string>
 #include <vector>
 #include <iostream>
+#include <filesystem>
 
 std::vector<nbtserver> parse_servers_json(const std::string& content) {
 	using json = nlohmann::json;
@@ -118,13 +120,80 @@ std::vector<nbtserver> parse_servers_csv(const std::string& content) {
 			continue;
 		}
 
-		servers.emplace_back(nbtserver{ 
-			.icon = items[1], 
-			.ip = items[2], 
-			.name = items[0], 
-			.accept_textures = items[3][0] == '1' 
+		servers.emplace_back(nbtserver{
+			.icon = items[1],
+			.ip = items[2],
+			.name = items[0],
+			.accept_textures = items[3][0] == '1'
 		});
 	}
 
 	return servers;
+}
+
+std::vector<nbtserver> parse_servers_dat(const std::string& filepath) {
+	if (filepath.empty()) {
+		std::cout << "servers.dat path is empty\n";
+		return {};
+	}
+
+	if (!std::filesystem::exists(filepath)) {
+		std::cout << "servers.dat file doesn't exist: " << filepath << "\n";
+		return {};
+	}
+
+	try {
+		NBT::NBTReader reader(filepath.c_str());
+
+		// Read "servers" list
+		char elementType;
+		int serverCount;
+		reader.readListHead("servers", &elementType, &serverCount);
+
+		if (elementType != NBT::idCompound) {
+			std::cout << "Invalid servers.dat: 'servers' list should contain compounds\n";
+			return {};
+		}
+
+		std::vector<nbtserver> servers;
+		servers.reserve(serverCount);
+
+		for (int i = 0; i < serverCount; i++) {
+			reader.enterCompound();
+
+			nbtserver server;
+			server.accept_textures = false;
+			bool valid = true;
+
+			// Read the 4 expected tags in order
+			try {
+				server.name = reader.readString("name");
+				server.icon = reader.readString("icon");
+				server.ip = reader.readString("ip");
+				server.accept_textures = reader.readByte("acceptTextures") != 0;
+			} catch (const std::exception& e) {
+				std::cout << "Warning: error reading server: " << e.what() << "\n";
+				valid = false;
+			}
+
+			reader.exitCompound();
+
+			// Validate required fields
+			if (server.name.empty() || server.ip.empty()) {
+				std::cout << "Warning: server entry missing required fields, skipping\n";
+				continue;
+			}
+
+			if (valid) {
+				servers.push_back(server);
+			}
+		}
+
+		reader.close();
+		return servers;
+
+	} catch (const std::exception& e) {
+		std::cout << "Error reading servers.dat: " << e.what() << "\n";
+		return {};
+	}
 }
