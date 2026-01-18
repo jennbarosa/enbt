@@ -50,10 +50,23 @@ namespace NBT{
 	const char idLongArray=12;
 
     template <typename T>
-    void IE2BE(T &Val);
+    void IE2BE(T &Val) {
+        if (sizeof(T)<=1)return;
+        char *s=(char*)&Val;
+        for(short i=0;i*2+1<(signed)sizeof(T);i++)
+        std::swap(s[i],s[sizeof(T)-1-i]);
+    }
 
     template <typename T>
-    T IE2BE(T *Val);
+    T IE2BE(T *Val) {
+        if (sizeof(T)<=1)return *Val;
+
+        T Res=*Val;
+        char *s=(char*)&Res;
+        for(short i=0;i*2+1<(signed)sizeof(T);i++)
+        std::swap(s[i],s[sizeof(T)-1-i]);
+        return Res;
+    }
 
     bool isSysBE();
 
