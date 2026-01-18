@@ -28,26 +28,6 @@ This file is part of SlopeCraft.
 
 using namespace NBT;
 
-template <typename T>
-void NBT::IE2BE(T &Val)
-{
-    if (sizeof(T)<=1)return;
-    char *s=(char*)&Val;
-    for(short i=0;i*2+1<(signed)sizeof(T);i++)
-    std::swap(s[i],s[sizeof(T)-1-i]);
-}
-
-template <typename T>
-T NBT::IE2BE(T *Val)
-{
-    if (sizeof(T)<=1)return *Val;
-
-    T Res=*Val;
-    char *s=(char*)&Res;
-    for(short i=0;i*2+1<(signed)sizeof(T);i++)
-    std::swap(s[i],s[sizeof(T)-1-i]);
-    return Res;
-}
 bool NBT::isSysBE()
 {
     short S=1;char *temp=(char*)&S;
